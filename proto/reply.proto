@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package proto;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "/proto";
+
+message Reply {
+  repeated string args = 1;
+  google.protobuf.Timestamp time = 2;
+}
