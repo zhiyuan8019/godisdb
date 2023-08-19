@@ -8,7 +8,7 @@ import (
 
 const BACKLOG int = 511
 
-func TcpServer(ipAddr string, port int) (int, error) {
+func TcpSocket(ipAddr string, port int) (int, error) {
 	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, unix.IPPROTO_TCP)
 	if err != nil {
 		return -1, err

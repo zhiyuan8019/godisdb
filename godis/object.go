@@ -3,23 +3,30 @@ package godis
 type GodisType int
 
 const (
-	GODIS_STRING GodisType = iota
-	GODIS_LIST
-	GODIS_HASH
-	GODIS_SET
-	GODIS_ZSET
+	GODIS_STRING GodisType = 1
+	GODIS_LIST   GodisType = 2
+	GODIS_HASH   GodisType = 3
+	GODIS_SET    GodisType = 4
+	GODIS_ZSET   GodisType = 5
 )
 
 type GodisVal interface{}
 
 type GodisObj struct {
-	Type_ GodisType
-	Ptr_  GodisVal
+	obj_type GodisType
+	val      GodisVal
 }
 
-func CreateObj(t GodisType, ptr GodisVal) (o *GodisObj) {
+type GodisHash map[string]*GodisObj
+
+func CreateObj(t GodisType, val GodisVal) (o *GodisObj) {
 	o = new(GodisObj)
-	o.Type_ = t
-	o.Ptr_ = ptr
+	o.obj_type = t
+	if t == GODIS_STRING {
+		o.val = val
+	} else if t == GODIS_HASH {
+		o.val = make(GodisHash)
+	}
+
 	return
 }

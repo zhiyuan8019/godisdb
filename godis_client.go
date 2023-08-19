@@ -98,7 +98,7 @@ func recvReply(conn net.Conn) {
 	proto.Unmarshal(buf[:n], &reply)
 
 	for _, value := range reply.Args {
-		fmt.Print(value)
+		fmt.Println(value)
 	}
 
 }
