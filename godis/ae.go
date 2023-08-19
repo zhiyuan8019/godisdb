@@ -2,9 +2,37 @@ package godis
 
 import (
 	"log"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
+
+type AeState int
+
+type AeErr struct {
+	msg string `default:"AE_ERR"`
+}
+
+func (e AeErr) Error() string {
+	return e.msg
+}
+
+func (e *AeErr) Is(tgt error) bool {
+	switch tgt.(type) {
+	case *AeErr, AeErr:
+		return true
+	}
+	return false
+}
+
+func (e *AeErr) As(target interface{}) bool {
+	switch v := target.(type) {
+	case *AeErr:
+		v.msg = e.msg
+		return true
+	}
+	return false
+}
 
 type FileEventType int
 
@@ -17,12 +45,12 @@ const (
 type TimeEventType int
 
 const (
-	AE_NORMAL TimeEventType = iota
-	AE_ONCE
+	AE_NORMAL TimeEventType = 0x1
+	AE_ONCE   TimeEventType = 0x2
 )
 
 type FileProc func(loop *AeEventLoop, fd int, mask FileEventType, extra interface{})
-type TimeProc func(loop *AeEventLoop, fd int, extra interface{})
+type TimeProc func(loop *AeEventLoop, fd int, extra interface{}) int
 
 type AeFileEvent struct {
 	fd         int
@@ -53,6 +81,7 @@ type AeEventLoop struct {
 
 	timeEventNextId int
 	timeEventHead   *AeTimeEvent
+	lastTime        int
 	stop            bool
 	epoll           *EpollState
 }
@@ -66,11 +95,14 @@ func AeCreateEventLoop() (*AeEventLoop, error) {
 		epfd:            epoll_fd,
 		events:          make([]unix.EpollEvent, 1024),
 		readyEventCount: 0,
+		regfd:           make(map[int]FileEventType),
 	}
 
 	loop := AeEventLoop{
-		timeEventNextId: 0,
+		fileEvents:      make(map[int]*AeFileEvent),
+		timeEventNextId: 1,
 		timeEventHead:   nil,
+		lastTime:        GetMsTime(),
 		stop:            false,
 		epoll:           epoll_state,
 	}
@@ -116,6 +148,7 @@ func (loop *AeEventLoop) aeEpollAdd(fd int, mask FileEventType) error {
 	regop, ok := loop.epoll.regfd[fd]
 	var op int = 0
 	if ok && regop != 0 {
+		loop.epoll.regfd[fd] |= mask
 		op = unix.EPOLL_CTL_MOD
 	} else {
 		loop.epoll.regfd[fd] = mask
@@ -156,37 +189,89 @@ func (loop *AeEventLoop) AeDeleteFileEvent(fd int, mask FileEventType, extra int
 	if !ok {
 		return nil
 	}
+	loop.fileEvents[fd].mask &^= mask
 
-	err := loop.aeEpollDelete(fd)
+	err := loop.aeEpollDelete(fd, mask)
 	if err != nil {
 		return err
 	}
-	delete(loop.fileEvents, fd)
-	return nil
-}
-
-func (loop *AeEventLoop) aeEpollDelete(fd int) error {
-	regop, ok := loop.epoll.regfd[fd]
-	if ok && regop != 0 {
-		err := unix.EpollCtl(loop.epoll.epfd, unix.EPOLL_CTL_DEL, fd, nil)
-		if err != nil {
-			loop.epoll.regfd[fd] = regop
-			return err
-		}
-		delete(loop.epoll.regfd, fd)
-	} else if ok && regop == 0 {
-		delete(loop.epoll.regfd, fd)
+	if loop.fileEvents[fd].mask == AE_NONE {
+		delete(loop.fileEvents, fd)
 	}
 	return nil
 }
 
-func (loop *AeEventLoop) AeCreateTimeEvent(milliseconds int, proc TimeProc, extra interface{}) int {
-	// TODO
-	return -123456789
+func (loop *AeEventLoop) aeEpollDelete(fd int, mask FileEventType) error {
+	regop, ok := loop.epoll.regfd[fd]
+	var ev uint32 = 0
+	if !ok {
+		return nil
+	}
+	if regop&AE_READABLE == AE_READABLE {
+		ev |= unix.EPOLLIN
+	}
+	if regop&AE_WRITABLE == AE_WRITABLE {
+		ev |= unix.EPOLLOUT
+	}
+	if mask&AE_READABLE == AE_READABLE {
+		ev &^= unix.EPOLLIN
+	}
+	if mask&AE_WRITABLE == AE_WRITABLE {
+		ev &^= unix.EPOLLOUT
+	}
+
+	if ev == 0 {
+		err := unix.EpollCtl(loop.epoll.epfd, unix.EPOLL_CTL_DEL, fd, nil)
+		if err != nil {
+			return err
+		}
+		delete(loop.epoll.regfd, fd)
+	} else {
+		err := unix.EpollCtl(loop.epoll.epfd, unix.EPOLL_CTL_MOD, fd, &unix.EpollEvent{
+			Fd:     int32(fd),
+			Events: ev,
+		})
+		if err != nil {
+			return err
+		}
+		loop.epoll.regfd[fd] &^= mask
+	}
+	return nil
 }
 
-func (loop *AeEventLoop) AeDeleteTimeEvent(id int) {
-	//TODO
+func (loop *AeEventLoop) AeCreateTimeEvent(milliseconds int, mask TimeEventType, proc TimeProc, extra interface{}) int {
+	var id int = loop.timeEventNextId
+	loop.timeEventNextId++
+	te := &AeTimeEvent{
+		id:    id,
+		when:  milliseconds,
+		mask:  mask,
+		proc:  proc,
+		next:  nil,
+		extra: extra,
+	}
+	te.next = loop.timeEventHead
+	loop.timeEventHead = te
+
+	return id
+}
+
+func (loop *AeEventLoop) AeDeleteTimeEvent(id int) error {
+	var te, prev *AeTimeEvent = nil, nil
+	te = loop.timeEventHead
+	for te != nil {
+		if te.id == id {
+			if prev == nil {
+				loop.timeEventHead = te.next
+			} else {
+				prev.next = te.next
+			}
+			return nil
+		}
+		prev = te
+		te = te.next
+	}
+	return AeErr{}
 }
 
 func (loop *AeEventLoop) aeProcessEvents() uint64 {
@@ -208,18 +293,74 @@ func (loop *AeEventLoop) aeProcessEvents() uint64 {
 		processed++
 	}
 
-	// TODO timeEvent process
-	{
+	//timeEvent process
 
-	} //timeEvent process
+	now := GetMsTime()
+	//handle time skew
+	if now < loop.lastTime {
+		te := loop.timeEventHead
+		for te != nil {
+			te.when = 0
+			te = te.next
+		}
+	}
+
+	te := loop.timeEventHead
+	for te != nil {
+		now = GetMsTime()
+		if now > te.when {
+			re_exec := te.proc(loop, te.id, nil)
+			processed++
+
+			if te.mask&AE_NORMAL == AE_NORMAL {
+				te.when = GetMsTime() + re_exec
+			} else {
+				loop.AeDeleteTimeEvent(te.id)
+			}
+			te = loop.timeEventHead
+		} else {
+			te = te.next
+		}
+
+	}
 
 	return processed
 }
 
+func (loop *AeEventLoop) aeSearchNearestTimer() *AeTimeEvent {
+	var te, nearest *AeTimeEvent = loop.timeEventHead, nil
+	for te != nil {
+		if nearest == nil || te.when < nearest.when {
+			nearest = te
+		}
+		te = te.next
+	}
+	return nearest
+}
+
+func GetMsTime() int {
+	return int(time.Now().UnixNano() / 1e6)
+}
+
+func calTimeInterval(loop *AeEventLoop) int {
+	now := GetMsTime()
+	shortest := loop.aeSearchNearestTimer()
+	var wait_time int = 10 // time epoll block
+	if shortest != nil {
+		time_interval := shortest.when - now
+		if time_interval < 0 {
+			wait_time = 0
+		} else {
+			wait_time = time_interval
+		}
+	}
+	return wait_time
+}
+
 func (loop *AeEventLoop) aeWait() {
-	//TODO : timeEvent wait
-	n, err := unix.EpollWait(loop.epoll.epfd, loop.epoll.events, 10)
-	if err != unix.EINTR {
+	wait_time := calTimeInterval(loop)
+	n, err := unix.EpollWait(loop.epoll.epfd, loop.epoll.events, wait_time)
+	if err != nil && err != unix.EINTR {
 		log.Panicf("EpollWait: %v\n", err)
 	}
 	loop.epoll.readyEventCount = n
