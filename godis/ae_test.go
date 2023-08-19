@@ -98,7 +98,7 @@ func TestAeEpollAdd(t *testing.T) {
 func TestAeEpollDelete(t *testing.T) {
 	loop, _ := AeCreateEventLoop()
 	loop.aeEpollAdd(1, AE_READABLE)
-	err := loop.aeEpollDelete(1)
+	err := loop.aeEpollDelete(1, AE_READABLE)
 	if err != nil {
 		t.Fatalf("aeEpollDelete() returned an error: %v", err)
 	}
