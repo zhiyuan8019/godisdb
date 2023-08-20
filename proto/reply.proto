@@ -9,4 +9,5 @@ option go_package = "/proto";
 message Reply {
   repeated string args = 1;
   google.protobuf.Timestamp time = 2;
+  int64 reply_type = 3;
 }
