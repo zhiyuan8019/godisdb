@@ -2,52 +2,32 @@
 
 ## `GodisDB` : 事件驱动的KV数据库
 
-GodisDB是Redis的简略版本，采用与Redis相同的基础架构。数据库整体由事件驱动，其中文件事件由`Epoll`提供多路IO复用。在服务端和客户端通信中使用了`protobuf`作为序列化方式
+`GodisDB`是Redis的简略版本，采用与Redis相同的基础架构。数据库整体由事件驱动，其中文件事件由`Epoll`提供多路IO复用。在服务端和客户端通信中使用了`protobuf`作为序列化方式。
 
 **主要特性**：
 
-- **AE事件库**：包括文件事件和时间事件，每个事件均有回调函数，通过`epoll`事件或时间触发。
+- **事件驱动架构**：基于`AE事件库`，支持文件事件和时间事件。通过`epoll`实现多路I/O复用，保证高效的并发处理。
 
-- **命令表**：通过`map`保存命令对应的回调函数。
+- **命令表**：所有的操作命令均保存在一个`map`中，每个命令关联有一个特定的回调函数。
 
-- **S-C通信**：通过`protobuf`的`message`编写传输消息数据结构，经序列化后发送。
+- **S-C通信**：在服务端和客户端之间，采用`protobuf`作为序列化方式，确保数据传输的高效，并保留了扩展性。
 
-- **redisObj**：实现了Redis早期版本的全部`5`类对象
+- **类型支持**：支持Redis早期版本中的`五`大核心数据类型
 
 ## 数据结构对应
 
 
 ```go
-String GODIS_STRING string                              
+String GODIS_STRING  string                              
 List   GODIS_LIST    GodisList
-Hash   GODIS_HASH   map[string]*GodisObj
-Set    GODIS_SET  map[string]*GodisObj
-Zset   GODIS_ZSETGodisSkipList + map[string]float64 
+Hash   GODIS_HASH    map[string]*GodisObj
+Set    GODIS_SET     map[string]*GodisObj
+Zset   GODIS_ZSET    GodisSkipList + map[string]float64 
 ```
 
-## 功能
+## 命令支持
 
-- ✅ String
-
-- ✅ List
-
-- ✅ Hash
-
-- ✅ Set
-
-- ✅ Zset
-
-## 组件
-
-- ✅ ae事件库
-
-- ✅ Client
-
-- ✅ Server
-
-- ✅ List
-
-- ✅ SkipList
+实现了Redis 3.0版本的大部分命令，包括但不限于基础的键值操作、列表操作、有序集合操作等。详情请见[godis/command.go](./godis/command.go)
 
 
 ## 测试
@@ -212,3 +192,7 @@ OK
 » zrem key a
 (integer) 1
 ```
+
+## 注意
+
+- server基于epoll仅linux可用
