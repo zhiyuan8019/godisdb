@@ -4,25 +4,25 @@
 
 ## 功能
 
-- ❌ String
+- ✅ String
 
-- ❌ List
+- ✅ List
 
-- ❌ Hash
+- ✅ Hash
 
-- ❌ Set
+- ✅ Set
 
-- ❌ Zset
+- ✅ Zset
 
 ## 组件
 
-- ✅ (part)ae事件库
+- ✅ ae事件库
 
 - ✅ Client
 
-- ✅ (demo) Server
+- ✅ Server
 
-- ❌ List
+- ✅ List
 
-- ❌ SkipList
+- ✅ SkipList
 
