@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"godisdb/godis"
 	myProto "godisdb/proto"
 	"net"
 	"os"
@@ -51,13 +52,16 @@ func main() {
 			break
 		}
 
-		sendCommand(line, conn)
+		err = sendCommand(line, conn)
+		if err != nil {
+			break
+		}
 		recvReply(conn)
 	}
 
 }
 
-func sendCommand(command string, conn net.Conn) {
+func sendCommand(command string, conn net.Conn) error {
 
 	slice := strings.Fields(command)
 	if len(slice) == 0 {
@@ -71,7 +75,7 @@ func sendCommand(command string, conn net.Conn) {
 		_, err := conn.Write(data)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			return
+			return err
 		}
 	} else {
 		var cmd = &myProto.Cmd{
@@ -82,9 +86,10 @@ func sendCommand(command string, conn net.Conn) {
 		_, err := conn.Write(data)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			return
+			return err
 		}
 	}
+	return nil
 }
 
 func recvReply(conn net.Conn) {
@@ -95,10 +100,69 @@ func recvReply(conn net.Conn) {
 		return
 	}
 	var reply myProto.Reply
-	proto.Unmarshal(buf[:n], &reply)
+	err = proto.Unmarshal(buf[:n], &reply)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+	switch reply.ReplyType {
+	case int64(godis.RE_NONE):
+		fmt.Print("(nil)\n")
+	case int64(godis.RE_OK):
+		for _, value := range reply.Args {
+			fmt.Println(value)
+		}
+	case int64(godis.RE_INT):
+		fmt.Print("(integer) ")
+		for _, value := range reply.Args {
+			fmt.Println(value)
+		}
+	case int64(godis.RE_ERR):
+		fmt.Print("(error) ")
+		for _, value := range reply.Args {
+			fmt.Println(value)
+		}
+	case int64(godis.RE_STRING):
+		fmt.Printf("\"%s\"\n", reply.Args[0])
+	case int64(godis.RE_HASH):
+		if len(reply.Args) == 0 {
+			fmt.Println("(empty array)")
+		} else {
+			for i := 0; i < len(reply.Args); i++ {
+				fmt.Printf("%d) \" %s\"\n", i+1, reply.Args[i])
+			}
+		}
+	case int64(godis.RE_LIST):
+		if len(reply.Args) == 0 {
+			fmt.Println("(empty array)")
+		} else {
+			for i := 0; i < len(reply.Args); i++ {
+				fmt.Printf("%d) \" %s\"\n", i+1, reply.Args[i])
+			}
+		}
+	case int64(godis.RE_SET):
+		if len(reply.Args) == 0 {
+			fmt.Println("(empty array)")
+		} else {
+			for i := 0; i < len(reply.Args); i++ {
+				fmt.Printf("%d) \" %s\"\n", i+1, reply.Args[i])
+			}
+		}
+	case int64(godis.RE_ZSET):
+		if len(reply.Args) == 0 {
+			fmt.Println("(empty array)")
+		} else {
+			for i := 0; i < len(reply.Args); i++ {
+				fmt.Printf("%d) \" %s\"\n", i+1, reply.Args[i])
+			}
+		}
+	case int64(godis.RE_FLOAT):
 
-	for _, value := range reply.Args {
-		fmt.Println(value)
+		fmt.Printf("\"%s\"\n", reply.Args[0])
+
+	default:
+		for _, value := range reply.Args {
+			fmt.Println(value)
+		}
 	}
 
 }

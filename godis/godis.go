@@ -24,7 +24,7 @@ type GodisClient struct {
 	arg_count        int
 	command          string
 	args             []string
-	reply            []string
+	reply            []myProto.Reply
 	ctime            int
 	last_interaction int
 	read_buf         [1024]byte
@@ -41,6 +41,21 @@ type GodisServer struct {
 	expire_check_count    int
 	expire_check_interval int
 }
+
+type ReplyType int64
+
+const (
+	RE_OK     ReplyType = 1
+	RE_ERR    ReplyType = 2
+	RE_INT    ReplyType = 3
+	RE_STRING ReplyType = 4
+	RE_HASH   ReplyType = 5
+	RE_LIST   ReplyType = 6
+	RE_SET    ReplyType = 7
+	RE_ZSET   ReplyType = 8
+	RE_FLOAT  ReplyType = 9
+	RE_NONE   ReplyType = 10
+)
 
 func findExpiredKey(loop *AeEventLoop, fd int, extra interface{}) int {
 	for i := 0; i < server.db_count; i++ {
@@ -72,9 +87,7 @@ func replyToClient(loop *AeEventLoop, fd int, mask FileEventType, extra interfac
 		loop.AeDeleteFileEvent(fd, AE_WRITABLE, nil)
 		return
 	}
-	reply := &myProto.Reply{
-		Args: server.clients[fd].reply,
-	}
+	reply := &server.clients[fd].reply[0]
 	data, err := proto.Marshal(reply)
 	if err != nil {
 		log.Printf("replyToClient proto error: %v\n", err)
@@ -85,14 +98,17 @@ func replyToClient(loop *AeEventLoop, fd int, mask FileEventType, extra interfac
 		log.Printf("replyToClient Write error: %v\n", err)
 		return
 	}
-	server.clients[fd].reply = []string{}
+	server.clients[fd].reply = server.clients[fd].reply[1:]
 }
 
 func processClientCommand(c *GodisClient) error {
 	c.last_interaction = GetMsTime()
 	cmd, ok := CommandTable[c.command]
 	if !ok {
-		c.reply = append(c.reply, "(error) ERR unknown command")
+		c.reply = append(c.reply, myProto.Reply{
+			Args:      []string{"ERR unknown command"},
+			ReplyType: int64(RE_ERR),
+		})
 		server.loop.AeCreateFileEvent(c.fd, AE_WRITABLE, replyToClient, nil)
 		return nil
 	}
@@ -135,7 +151,7 @@ func createClient(fd int) *GodisClient {
 		arg_count:        0,
 		command:          "",
 		args:             []string{},
-		reply:            []string{},
+		reply:            []myProto.Reply{},
 		ctime:            GetMsTime(),
 		last_interaction: GetMsTime(),
 		read_buf:         [1024]byte{},
@@ -162,9 +178,13 @@ func initServerConfig() {
 		expire_check_count:    10,
 		expire_check_interval: 100,
 	}
+
 }
 
 func initServer() {
+	//command table
+	initCommandTable()
+
 	//server db
 	server.db = make(map[int]*GodisDB)
 	for i := 0; i < server.db_count; i++ {
