@@ -48,7 +48,7 @@ func initCommandTable() {
 		"lset":   {"lset", lsetCommand, 4, WRITE_COMMAND, 0, 0, false},
 		"lrange": {"lrange", lrangeCommand, 4, READ_COMMAND, 0, 0, false},
 
-		"hset":    {"hset", hsetCommand, 4, WRITE_COMMAND, 0, 0, false}, //need more check count%2
+		"hset":    {"hset", hsetCommand, 4, WRITE_COMMAND, 0, 0, true}, //need more check count%2
 		"hget":    {"hget", hgetCommand, 3, READ_COMMAND, 0, 0, false},
 		"hexists": {"hexists", hexistsCommand, 3, READ_COMMAND, 0, 0, false},
 		"hdel":    {"hdel", hdelCommand, 3, WRITE_COMMAND, 0, 0, true},
